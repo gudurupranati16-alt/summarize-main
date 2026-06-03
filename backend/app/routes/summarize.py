@@ -3,17 +3,17 @@ import hashlib
 import pdfplumber
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from app.database.db import SessionLocal, PDFDocument, Summary
 from app.schemas.summary import PDFUploadResponse, SummaryHistoryItem
 from app.utils.cerebras_client import get_cerebras_client
 
 router = APIRouter()
 
-# Configuration
 UPLOAD_DIR = "uploads"
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+MAX_FILE_SIZE = 20 * 1024 * 1024
+ALLOWED_CONTENT_TYPE = "application/pdf"
 
-# Create uploads directory if it doesn't exist
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
@@ -43,79 +43,83 @@ def extract_text_from_pdf(file_path: str) -> str:
         raise HTTPException(status_code=400, detail=f"Failed to extract text from PDF: {str(e)}")
 
 
+def validate_file(file: UploadFile, content: bytes) -> None:
+    """Validate file type and size."""
+    if file.content_type != ALLOWED_CONTENT_TYPE:
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+    
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File size exceeds maximum limit of {MAX_FILE_SIZE / 1024 / 1024}MB"
+        )
+
+
+def get_or_create_pdf_document(db: Session, file_hash: str, file_path: str, 
+                               filename: str, content: bytes, text_content: str) -> PDFDocument:
+    """Get existing PDF or create new one."""
+    existing_pdf = db.query(PDFDocument).filter(
+        PDFDocument.file_hash == file_hash
+    ).first()
+    
+    if existing_pdf:
+        return existing_pdf
+    
+    pdf_doc = PDFDocument(
+        filename=filename,
+        file_path=file_path,
+        file_hash=file_hash,
+        file_size=len(content),
+        text_content=text_content
+    )
+    db.add(pdf_doc)
+    db.commit()
+    db.refresh(pdf_doc)
+    return pdf_doc
+
+
 @router.post("/summarize", response_model=PDFUploadResponse)
 async def summarize_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """
-    Upload a PDF file and generate a summary using Cerebras API.
-    
-    Returns:
-        PDFUploadResponse with pdf_id, filename, file_size, upload_date, and summary
-    """
+    """Upload a PDF file and generate a summary using Cerebras API."""
     try:
-        # Validate file type
-        if file.content_type != "application/pdf":
-            raise HTTPException(status_code=400, detail="Only PDF files are accepted")
-
-        # Read file content
         content = await file.read()
-        
-        # Validate file size
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File size exceeds maximum limit of {MAX_FILE_SIZE / 1024 / 1024}MB"
-            )
+        validate_file(file, content)
 
-        # Calculate file hash
         file_hash = calculate_file_hash(content)
 
-        # Check if same PDF already exists
-        existing_pdf = db.query(PDFDocument).filter(
-            PDFDocument.file_hash == file_hash
-        ).first()
-
-        if existing_pdf:
-            # Return cached summary if available
-            existing_summary = db.query(Summary).filter(
-                Summary.pdf_id == existing_pdf.id
+        existing_summary = db.query(Summary).join(
+            PDFDocument, 
+            Summary.pdf_id == PDFDocument.id
+        ).filter(PDFDocument.file_hash == file_hash).first()
+        
+        if existing_summary:
+            pdf = db.query(PDFDocument).filter(
+                PDFDocument.id == existing_summary.pdf_id
             ).first()
-            
-            if existing_summary:
-                return PDFUploadResponse(
-                    pdf_id=existing_pdf.id,
-                    filename=existing_pdf.filename,
-                    file_size=existing_pdf.file_size,
-                    upload_date=existing_pdf.upload_date,
-                    summary=existing_summary.summary_text
-                )
+            return PDFUploadResponse(
+                pdf_id=pdf.id,
+                filename=pdf.filename,
+                file_size=pdf.file_size,
+                upload_date=pdf.upload_date,
+                summary=existing_summary.summary_text
+            )
 
-        # Save file to disk
         file_path = os.path.join(UPLOAD_DIR, f"{file_hash}_{file.filename}")
         with open(file_path, "wb") as f:
             f.write(content)
 
-        # Extract text from PDF
         text_content = extract_text_from_pdf(file_path)
 
         if not text_content.strip():
             raise HTTPException(status_code=400, detail="PDF appears to be empty or unreadable")
 
-        # Create PDF document record
-        pdf_doc = PDFDocument(
-            filename=file.filename,
-            file_path=file_path,
-            file_hash=file_hash,
-            file_size=len(content),
-            text_content=text_content
+        pdf_doc = get_or_create_pdf_document(
+            db, file_hash, file_path, file.filename, content, text_content
         )
-        db.add(pdf_doc)
-        db.commit()
-        db.refresh(pdf_doc)
 
-        # Generate summary using Cerebras
         cerebras_client = get_cerebras_client()
         summary_text = cerebras_client.summarize(text_content)
 
@@ -125,11 +129,7 @@ async def summarize_pdf(
                 detail="Failed to generate summary from Cerebras API"
             )
 
-        # Save summary to database
-        summary = Summary(
-            pdf_id=pdf_doc.id,
-            summary_text=summary_text
-        )
+        summary = Summary(pdf_id=pdf_doc.id, summary_text=summary_text)
         db.add(summary)
         db.commit()
 
@@ -149,31 +149,21 @@ async def summarize_pdf(
 
 @router.get("/summaries", response_model=list[SummaryHistoryItem])
 def get_summaries(db: Session = Depends(get_db)):
-    """
-    Retrieve all stored summaries with their associated PDF information.
-    """
+    """Retrieve all stored summaries with their associated PDF information."""
     try:
-        summaries = db.query(
-            Summary.id,
-            Summary.pdf_id,
-            PDFDocument.filename,
-            Summary.summary_text,
-            Summary.created_at
-        ).join(
-            PDFDocument,
-            Summary.pdf_id == PDFDocument.id
+        summaries = db.query(Summary).join(
+            PDFDocument, Summary.pdf_id == PDFDocument.id
         ).all()
 
-        result = [
+        return [
             SummaryHistoryItem(
-                id=s[0],
-                pdf_id=s[1],
-                filename=s[2],
-                summary_text=s[3],
-                created_at=s[4]
+                id=s.id,
+                pdf_id=s.pdf_id,
+                filename=db.query(PDFDocument).filter(PDFDocument.id == s.pdf_id).first().filename,
+                summary_text=s.summary_text,
+                created_at=s.created_at
             )
             for s in summaries
         ]
-        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve summaries: {str(e)}")

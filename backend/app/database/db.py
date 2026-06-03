@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -7,7 +7,10 @@ DATABASE_URL = "sqlite:///./news.db"
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False}
+    connect_args={"check_same_thread": False},
+    pool_size=5,
+    max_overflow=10,
+    echo=False
 )
 
 SessionLocal = sessionmaker(
@@ -25,9 +28,9 @@ class PDFDocument(Base):
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
-    file_hash = Column(String, nullable=True, index=True)
+    file_hash = Column(String, nullable=True, index=True, unique=True)
     file_size = Column(Integer, nullable=False)
-    upload_date = Column(DateTime, default=datetime.utcnow)
+    upload_date = Column(DateTime, default=datetime.utcnow, index=True)
     text_content = Column(Text, nullable=True)
 
 
@@ -37,8 +40,7 @@ class Summary(Base):
     id = Column(Integer, primary_key=True, index=True)
     pdf_id = Column(Integer, nullable=False, index=True)
     summary_text = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
-# Create tables
 Base.metadata.create_all(bind=engine)

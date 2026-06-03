@@ -1,77 +1,68 @@
 import { useState, useEffect } from "react";
 import FileUpload from "./components/FileUpload";
 import SummaryDisplay from "./components/SummaryDisplay";
+import { uploadPDF, getSummaryHistory, checkHealth } from "./services/api.js";
 import "./App.css";
+
+const formatHistoryDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
 function App() {
   const [currentSummary, setCurrentSummary] = useState(null);
   const [summaryHistory, setSummaryHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Check backend connection on mount
   useEffect(() => {
-    const checkBackendConnection = async () => {
-      try {
-        const response = await fetch("http://localhost:8000/health");
-        if (response.ok) {
-          setConnectionError(null);
-        } else {
-          setConnectionError("Backend server is not responding properly");
-        }
-      } catch (error) {
+    const initializeApp = async () => {
+      const isHealthy = await checkHealth();
+      if (!isHealthy) {
         setConnectionError(
           "Cannot connect to backend server. Make sure it's running on http://localhost:8000"
         );
+      } else {
+        await fetchSummaryHistory();
       }
+      setLoading(false);
     };
-
-    checkBackendConnection();
+    initializeApp();
   }, []);
-
-  const handleUpload = async (file) => {
-    const { uploadPDF } = await import("./services/api.js");
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const response = await fetch("http://localhost:8000/summarize", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Failed to process PDF");
-      }
-
-      const data = await response.json();
-      setCurrentSummary(data);
-      setConnectionError(null);
-
-      // Refresh history
-      fetchSummaryHistory();
-    } catch (error) {
-      throw error;
-    }
-  };
 
   const fetchSummaryHistory = async () => {
     try {
-      const response = await fetch("http://localhost:8000/summaries");
-      if (response.ok) {
-        const data = await response.json();
-        setSummaryHistory(data);
-      }
+      const data = await getSummaryHistory();
+      setSummaryHistory(data);
     } catch (error) {
       console.error("Failed to fetch history:", error);
     }
   };
 
-  useEffect(() => {
-    fetchSummaryHistory();
-  }, []);
+  const handleUpload = async (file) => {
+    try {
+      const response = await uploadPDF(file);
+      setCurrentSummary(response);
+      setConnectionError(null);
+      await fetchSummaryHistory();
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="app-container">
+        <div className="app-loading">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -119,7 +110,7 @@ function App() {
 
             {showHistory && (
               <div className="history-list">
-                {summaryHistory.map((item, index) => (
+                {summaryHistory.map((item) => (
                   <div
                     key={item.id}
                     className="history-item"
@@ -137,13 +128,7 @@ function App() {
                     <div className="history-item-content">
                       <h4>{item.filename}</h4>
                       <p className="history-item-date">
-                        {new Date(item.created_at).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        {formatHistoryDate(item.created_at)}
                       </p>
                     </div>
                     <span className="history-item-arrow">→</span>

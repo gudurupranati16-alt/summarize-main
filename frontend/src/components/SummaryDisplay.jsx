@@ -1,22 +1,39 @@
-import React, { useState } from 'react';
+import React from 'react';
 import './SummaryDisplay.css';
 
-export default function SummaryDisplay({ summary, onClear }) {
-  const [isExpanded, setIsExpanded] = useState(true);
+const formatDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
 
-  if (!summary) {
-    return null;
+const copyToClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert('Summary copied to clipboard!');
+  } catch {
+    alert('Failed to copy to clipboard');
   }
+};
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+const downloadSummary = (filename, summary) => {
+  const element = document.createElement('a');
+  const file = new Blob([summary], { type: 'text/plain' });
+  element.href = URL.createObjectURL(file);
+  element.download = `${filename.replace('.pdf', '')}_summary.txt`;
+  document.body.appendChild(element);
+  element.click();
+  document.body.removeChild(element);
+};
+
+export default function SummaryDisplay({ summary, onClear }) {
+  const [isExpanded, setIsExpanded] = React.useState(true);
+
+  if (!summary) return null;
 
   return (
     <div className="summary-display">
@@ -33,9 +50,7 @@ export default function SummaryDisplay({ summary, onClear }) {
       </div>
 
       <div className={`summary-content ${isExpanded ? 'expanded' : 'collapsed'}`}>
-        <div className="summary-text">
-          {summary.summary}
-        </div>
+        <div className="summary-text">{summary.summary}</div>
       </div>
 
       <button
@@ -46,21 +61,16 @@ export default function SummaryDisplay({ summary, onClear }) {
       </button>
 
       <div className="summary-actions">
-        <button className="action-btn copy-btn" onClick={() => {
-          navigator.clipboard.writeText(summary.summary);
-          alert('Summary copied to clipboard!');
-        }}>
+        <button 
+          className="action-btn copy-btn" 
+          onClick={() => copyToClipboard(summary.summary)}
+        >
           📋 Copy
         </button>
-        <button className="action-btn download-btn" onClick={() => {
-          const element = document.createElement('a');
-          const file = new Blob([summary.summary], { type: 'text/plain' });
-          element.href = URL.createObjectURL(file);
-          element.download = `${summary.filename.replace('.pdf', '')}_summary.txt`;
-          document.body.appendChild(element);
-          element.click();
-          document.body.removeChild(element);
-        }}>
+        <button 
+          className="action-btn download-btn" 
+          onClick={() => downloadSummary(summary.filename, summary.summary)}
+        >
           ⬇️ Download
         </button>
       </div>
