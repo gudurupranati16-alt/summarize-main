@@ -14,9 +14,19 @@ const handleError = (error, defaultMessage) => {
   throw new Error(error.message || defaultMessage);
 };
 
-export const uploadPDF = async (file) => {
+export const uploadPDF = async (files) => {
   const formData = new FormData();
-  formData.append('file', file);
+  if (Array.isArray(files)) {
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+  } else if (files instanceof FileList) {
+    Array.from(files).forEach((file) => {
+      formData.append('files', file);
+    });
+  } else {
+    formData.append('files', files);
+  }
 
   try {
     const response = await api.post('/summarize', formData, {

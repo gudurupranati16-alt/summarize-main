@@ -1,24 +1,13 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Index
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime  # pyrefly: ignore[missing-import]
+from sqlalchemy.orm import declarative_base  # pyrefly: ignore[missing-import]
+from sqlalchemy.orm import sessionmaker  # pyrefly: ignore[missing-import]
 from datetime import datetime
+import os
 
-DATABASE_URL = "sqlite:///./news.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./news.db")
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    pool_size=5,
-    max_overflow=10,
-    echo=False
-)
-
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
-
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
@@ -28,19 +17,21 @@ class PDFDocument(Base):
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
-    file_hash = Column(String, nullable=True, index=True, unique=True)
+    file_hash = Column(String, unique=True, nullable=False)
     file_size = Column(Integer, nullable=False)
-    upload_date = Column(DateTime, default=datetime.utcnow, index=True)
     text_content = Column(Text, nullable=True)
+    upload_date = Column(DateTime, default=datetime.utcnow)
 
 
 class Summary(Base):
     __tablename__ = "summaries"
 
     id = Column(Integer, primary_key=True, index=True)
-    pdf_id = Column(Integer, nullable=False, index=True)
+    pdf_id = Column(Integer, nullable=False)
     summary_text = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    sentiment = Column(String, nullable=True)
+    sentiment_explanation = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 Base.metadata.create_all(bind=engine)

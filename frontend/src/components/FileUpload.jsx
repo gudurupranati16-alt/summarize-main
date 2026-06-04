@@ -21,26 +21,40 @@ export default function FileUpload({ onUpload }) {
     e.preventDefault();
   };
 
-  const processFile = async (file) => {
-    // Validate file type
-    if (file.type !== 'application/pdf') {
-      setError('Please upload a PDF file');
-      return;
-    }
+  const processFiles = async (filesList) => {
+    const files = Array.from(filesList);
+    if (files.length === 0) return;
 
-    // Validate file size (20MB max)
-    const maxSize = 20 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setError(`File size exceeds 20MB limit. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB`);
-      return;
+    // Validate each file
+    for (const file of files) {
+      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        setError(`"${file.name}" is not a PDF file. Please upload only PDFs.`);
+        return;
+      }
+
+      const maxSize = 20 * 1024 * 1024;
+      if (file.size > maxSize) {
+        setError(`"${file.name}" exceeds the 20MB limit. File is ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+        return;
+      }
     }
 
     setError(null);
-    setFileName(file.name);
+    const displayNames = files.map(f => f.name);
+    let displayName = "";
+    if (displayNames.length === 1) {
+      displayName = displayNames[0];
+    } else if (displayNames.length <= 3) {
+      displayName = displayNames.join(', ');
+    } else {
+      displayName = `${displayNames.length} PDF files (${displayNames.slice(0, 2).join(', ')}...)`;
+    }
+    
+    setFileName(displayName);
     setIsLoading(true);
 
     try {
-      await onUpload(file);
+      await onUpload(files);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -54,14 +68,14 @@ export default function FileUpload({ onUpload }) {
 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      processFile(files[0]);
+      processFiles(files);
     }
   };
 
   const handleFileInput = (e) => {
     const files = e.target.files;
     if (files.length > 0) {
-      processFile(files[0]);
+      processFiles(files);
     }
   };
 
@@ -86,6 +100,7 @@ export default function FileUpload({ onUpload }) {
           onChange={handleFileInput}
           style={{ display: 'none' }}
           disabled={isLoading}
+          multiple
         />
 
         {isLoading ? (
@@ -108,9 +123,9 @@ export default function FileUpload({ onUpload }) {
                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
               />
             </svg>
-            <h3>Drag and drop your PDF</h3>
-            <p>or click to select a file</p>
-            <p className="file-info">PDF files up to 20MB</p>
+            <h3>Drag and drop your PDF files</h3>
+            <p>or click to select files</p>
+            <p className="file-info">PDF files up to 20MB each</p>
           </div>
         )}
       </div>

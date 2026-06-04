@@ -69,8 +69,8 @@ class CerebrasClient:
         """Call Cerebras API to generate a summary of the provided text."""
         truncated_text = self.truncate_text(text)
         
-        prompt = f"""Please provide a comprehensive summary of the following text in paragraph format. 
-The summary should capture the key points, main ideas, and important details.
+        prompt = f"""Please provide a comprehensive summary of the following text in exactly one single paragraph. 
+The summary must be a single cohesive paragraph, must capture the key points, main ideas, and important details, and must NOT contain any bullet points, lists, or multiple paragraphs.
 
 Text to summarize:
 {truncated_text}

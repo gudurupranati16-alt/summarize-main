@@ -1,21 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel  # pyrefly: ignore[missing-import]
 from datetime import datetime
 from typing import Optional
-
-
-class SummaryRequest(BaseModel):
-    company: Optional[str] = None
-
-
-class Article(BaseModel):
-    title: str
-    description: str
-
-
-class SummaryResponse(BaseModel):
-    company: Optional[str] = None
-    summary: list[str]
-    articles: list[Article]
 
 
 class PDFUploadResponse(BaseModel):
@@ -24,6 +9,8 @@ class PDFUploadResponse(BaseModel):
     file_size: int
     upload_date: datetime
     summary: str
+    sentiment: Optional[str] = "Neutral"
+    sentiment_explanation: Optional[str] = ""
 
 
 class SummaryHistoryItem(BaseModel):
@@ -31,7 +18,6 @@ class SummaryHistoryItem(BaseModel):
     pdf_id: int
     filename: str
     summary_text: str
+    sentiment: Optional[str] = None
+    sentiment_explanation: Optional[str] = None
     created_at: datetime
-
-    class Config:
-        from_attributes = True
